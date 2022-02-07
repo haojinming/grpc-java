@@ -20,39 +20,87 @@ import io.grpc.Channel;
 import io.grpc.ManagedChannel;
 import io.grpc.ManagedChannelBuilder;
 import io.grpc.StatusRuntimeException;
+
+import java.util.ArrayList;
+import java.util.Random;
 import java.util.concurrent.TimeUnit;
+import java.util.logging.FileHandler;
 import java.util.logging.Level;
 import java.util.logging.Logger;
+
+class GrpcGreetingRepeat implements Runnable{
+  private final String allStr = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+  private Logger logger;
+  private Random random = new Random();
+
+  private String RandomStr() {
+    StringBuffer sb = new StringBuffer();
+    int length = random.nextInt(512);
+    length = length % 512;
+    for(int i = 0; i < length; i++){
+      int number = random.nextInt(62);
+      sb.append(allStr.charAt(number));
+    }
+    return sb.toString();
+  }
+  public GrpcGreetingRepeat(ManagedChannel channel, int index, int greetNum) {
+    
+    this.channel = channel;
+    this.greetNum = greetNum;
+    this.index = index;
+    String logPath = "./grpc_duration_" + index + ".log";
+    try {
+      logger = Logger.getLogger(GrpcGreetingRepeat.class.getName() + index);
+      FileHandler fileHander = new FileHandler(logPath);
+      logger.setUseParentHandlers(false);
+      logger.addHandler(fileHander);
+    } catch (Exception e) {
+      
+    }
+    
+  }
+    /** Say hello to server. */
+  public void greet(String name, int num) {
+    // logger.info("Will try to greet " + name + " ...");
+    HelloReply response;
+    GreeterGrpc.GreeterBlockingStub blockingStub = GreeterGrpc.newBlockingStub(channel);
+    try {
+      for (int i = 0; i < num; i++) {
+        String content = name + RandomStr();
+        HelloRequest request = HelloRequest.newBuilder().setName(content).build();
+        long startTime = System.currentTimeMillis();
+        response = blockingStub.sayHello(request);
+        long curTime = System.currentTimeMillis();
+        long duration = curTime - startTime;
+        if (duration > 0) {
+          String msg = "Greeting: " + response.getMessage() + " takes: " +  (curTime - startTime) + " ms";
+          //logger.info(msg);
+        }
+        
+      }
+    } catch (StatusRuntimeException e) {
+      logger.log(Level.WARNING, "RPC failed: {0}", e.getStatus());
+      return;
+    } finally {
+      
+    }
+  }
+
+  @Override
+  public void run() {
+    greet("Concur " + index, greetNum);
+  }
+  ManagedChannel channel;
+  private int greetNum;
+  private int index;
+}
 
 /**
  * A simple client that requests a greeting from the {@link HelloWorldServer}.
  */
 public class HelloWorldClient {
-  private static final Logger logger = Logger.getLogger(HelloWorldClient.class.getName());
-
-  private final GreeterGrpc.GreeterBlockingStub blockingStub;
-
   /** Construct client for accessing HelloWorld server using the existing channel. */
   public HelloWorldClient(Channel channel) {
-    // 'channel' here is a Channel, not a ManagedChannel, so it is not this code's responsibility to
-    // shut it down.
-
-    // Passing Channels to code makes code easier to test and makes it easier to reuse Channels.
-    blockingStub = GreeterGrpc.newBlockingStub(channel);
-  }
-
-  /** Say hello to server. */
-  public void greet(String name) {
-    logger.info("Will try to greet " + name + " ...");
-    HelloRequest request = HelloRequest.newBuilder().setName(name).build();
-    HelloReply response;
-    try {
-      response = blockingStub.sayHello(request);
-    } catch (StatusRuntimeException e) {
-      logger.log(Level.WARNING, "RPC failed: {0}", e.getStatus());
-      return;
-    }
-    logger.info("Greeting: " + response.getMessage());
   }
 
   /**
@@ -60,24 +108,29 @@ public class HelloWorldClient {
    * greeting. The second argument is the target server.
    */
   public static void main(String[] args) throws Exception {
-    String user = "world";
     // Access a service running on the local machine on port 50051
     String target = "localhost:50051";
+    int concurNum = 10;
+    int greetNum = 1;
     // Allow passing in the user and target strings as command line arguments
     if (args.length > 0) {
       if ("--help".equals(args[0])) {
         System.err.println("Usage: [name [target]]");
         System.err.println("");
-        System.err.println("  name    The name you wish to be greeted by. Defaults to " + user);
+        System.err.println("  name    The name you wish to be greeted by. Defaults to ");
         System.err.println("  target  The server to connect to. Defaults to " + target);
         System.exit(1);
       }
-      user = args[0];
     }
-    if (args.length > 1) {
-      target = args[1];
+    if (args.length >= 2) {
+      concurNum = Integer.valueOf(args[0]);
+      greetNum = Integer.valueOf(args[1]);
     }
 
+    if (concurNum <=0 || greetNum <= 0) {
+      System.out.println("input num should be larger than 0, input: " + args[0] + " " + args[1]);
+      return;
+    }
     // Create a communication channel to the server, known as a Channel. Channels are thread-safe
     // and reusable. It is common to create channels at the beginning of your application and reuse
     // them until the application shuts down.
@@ -86,14 +139,19 @@ public class HelloWorldClient {
         // needing certificates.
         .usePlaintext()
         .build();
-    try {
-      HelloWorldClient client = new HelloWorldClient(channel);
-      client.greet(user);
-    } finally {
-      // ManagedChannels use resources like threads and TCP connections. To prevent leaking these
-      // resources the channel should be shut down when it will no longer be used. If it may be used
-      // again leave it running.
-      channel.shutdownNow().awaitTermination(5, TimeUnit.SECONDS);
+    ArrayList<Thread> threads = new ArrayList<Thread>();
+    for (int i = 0; i < concurNum; i++) {
+      GrpcGreetingRepeat repeatGreet = new GrpcGreetingRepeat(channel, i, greetNum);
+      Thread t = new Thread(repeatGreet);
+      t.start();
+      threads.add(t);
     }
+
+    for (Thread t : threads) {
+      t.join();
+    }
+    
+    channel.shutdownNow().awaitTermination(5, TimeUnit.SECONDS);
+
   }
 }

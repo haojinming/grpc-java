@@ -95,7 +95,7 @@ public class HelloWorldClientTest {
   public void greet_messageDeliveredToServer() {
     ArgumentCaptor<HelloRequest> requestCaptor = ArgumentCaptor.forClass(HelloRequest.class);
 
-    client.greet("test name");
+    client.greet("test name", 1);
 
     verify(serviceImpl)
         .sayHello(requestCaptor.capture(), ArgumentMatchers.<StreamObserver<HelloReply>>any());

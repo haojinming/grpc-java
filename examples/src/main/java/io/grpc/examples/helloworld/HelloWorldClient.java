@@ -27,6 +27,9 @@ import java.util.concurrent.TimeUnit;
 import java.util.logging.FileHandler;
 import java.util.logging.Level;
 import java.util.logging.Logger;
+import io.perfmark.Link;
+import io.perfmark.PerfMark;
+import io.perfmark.traceviewer.TraceEventViewer;
 
 class GrpcGreetingRepeat implements Runnable{
   private final String allStr = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
@@ -131,6 +134,7 @@ public class HelloWorldClient {
       System.out.println("input num should be larger than 0, input: " + args[0] + " " + args[1]);
       return;
     }
+    // PerfMark.setEnabled(true);
     // Create a communication channel to the server, known as a Channel. Channels are thread-safe
     // and reusable. It is common to create channels at the beginning of your application and reuse
     // them until the application shuts down.
@@ -152,6 +156,6 @@ public class HelloWorldClient {
     }
     
     channel.shutdownNow().awaitTermination(5, TimeUnit.SECONDS);
-
+    //TraceEventViewer.writeTraceHtml();
   }
 }
